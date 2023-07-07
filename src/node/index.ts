@@ -187,11 +187,11 @@ export default function PluginInspect(options: Options = {}): Plugin {
   function getModulesInfo(transformMap: TransformMap, idMap: ResolveIdMap, getDeps: ((id: string) => string[]) | null, isVirtual: (pluginName: string, transformName: string) => boolean) {
     const transformedIdMap = transformIdMap(idMap)
     const ids = new Set(Object.keys(transformMap).concat(Object.keys(transformedIdMap)))
-
     return Array.from(ids).sort()
       .map((id): ModuleInfo => {
+        let total = 0
         const plugins = (transformMap[id] || []).map((transItem) => {
-          return { name: transItem.name, transform: transItem.end - transItem.start }
+          return { name: transItem.name, transform: (total += transItem.end - transItem.start) }
         }).concat(
           // @ts-expect-error transform is optional
           (transformedIdMap[id] || []).map((idItem) => {
@@ -204,6 +204,7 @@ export default function PluginInspect(options: Options = {}): Plugin {
           deps: getDeps ? getDeps(id) : [],
           plugins,
           virtual: isVirtual(plugins[0].name, transformMap[id]?.[0].name || ''),
+          total,
         }
       })
   }
@@ -410,7 +411,6 @@ export default function PluginInspect(options: Options = {}): Plugin {
         transforms: map[resolvedId] || [],
       }
     }
-
     const isVirtual = (pluginName: string) => pluginName !== dummyLoadPluginName
     const getDeps = (id: string) => Array.from(server.moduleGraph.getModuleById(id)?.importedModules || [])
       .map(i => i.id || '')
