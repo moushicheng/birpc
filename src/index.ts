@@ -60,6 +60,15 @@ export interface EventOptions<Remote> {
   resolver?: BirpcResolver
 
   /**
+   * Hook triggered before an event is sent to the remote
+   *
+   * @param req - Request parameters
+   * @param next - Function to continue the request
+   * @param resolve - Function to resolve the response directly
+   */
+  onRequest?: (req: Request, next: (req?: Request) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
+
+  /**
    * Custom error handler
    *
    * @deprecated use `onFunctionError` and `onGeneralError` instead
@@ -209,7 +218,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
 
   const rpcPromiseMap = new Map<string, PromiseEntry>()
 
-  let _promise: Promise<any> | any
+  let _promiseInit: Promise<any> | any
   let closed = false
 
   const rpc = new Proxy({}, {
@@ -241,21 +250,25 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
       const sendCall = async (...args: any[]) => {
         if (closed)
           throw new Error(`[birpc] rpc is closed, cannot call "${method}"`)
-        if (_promise) {
+        if (_promiseInit) {
           // Wait if `on` is promise
           try {
-            await _promise
+            await _promiseInit
           }
           finally {
             // don't keep resolved promise hanging
-            _promise = undefined
+            _promiseInit = undefined
           }
         }
-        // eslint-disable-next-line no-async-promise-executor
-        return new Promise(async (resolve, reject) => {
-          const id = nanoid()
-          let timeoutId: ReturnType<typeof setTimeout> | undefined
 
+        // eslint-disable-next-line prefer-const
+        let { promise, resolve, reject } = createPromiseWithResolvers<any>()
+
+        const id = nanoid()
+        let timeoutId: ReturnType<typeof setTimeout> | undefined
+        const _req: Request = { m: method, a: args, i: id, t: TYPE_REQUEST }
+
+        async function handler(req: Request = _req) {
           if (timeout >= 0) {
             timeoutId = setTimeout(() => {
               try {
@@ -276,17 +289,25 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
           }
 
           rpcPromiseMap.set(id, { resolve, reject, timeoutId, method })
+          await post(serialize(req))
+          return promise
+        }
 
-          try {
-            await post(serialize(<Request>{ m: method, a: args, i: id, t: 'q' }))
-          }
-          catch (e) {
-            clearTimeout(timeoutId)
-            rpcPromiseMap.delete(id)
-            if (options.onGeneralError?.(e as Error, method, args) !== true)
-              reject(e)
-          }
-        })
+        try {
+          if (options.onRequest)
+            await options.onRequest(_req, handler, resolve)
+          else
+            await handler()
+        }
+        catch (e) {
+          clearTimeout(timeoutId)
+          rpcPromiseMap.delete(id)
+          if (options.onGeneralError?.(e as Error) !== true)
+            throw e
+          return
+        }
+
+        return promise
       }
       sendCall.asEvent = sendEvent
       return sendCall
@@ -402,7 +423,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
     }
   }
 
-  _promise = on(onMessage)
+  _promiseInit = on(onMessage)
 
   return rpc
 }
@@ -462,6 +483,20 @@ export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalF
     // @ts-expect-error deprecated
     boardcast: broadcastProxy,
   }
+}
+
+function createPromiseWithResolvers<T>(): {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: any) => void
+} {
+  let resolve: (value: T | PromiseLike<T>) => void
+  let reject: (reason?: any) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve: resolve!, reject: reject! }
 }
 
 // port from nanoid
