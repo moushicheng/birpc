@@ -167,4 +167,14 @@ it('broadcast optional', async () => {
 
   expect(await client3.$callOptional('hello', 'Bob'))
     .toEqual('Hello Bob, my name is Alice')
+
+  expect(await server.broadcast.$callEvent('bump'))
+    .toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
+
+  await new Promise(resolve => setTimeout(resolve, 1))
+  expect(Bob.getCount()).toBe(3)
 })

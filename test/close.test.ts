@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { createBirpc } from '../src'
 
 it('stops the rpc promises', async () => {
-  expect.assertions(2)
+  expect.assertions(4)
   const rpc = createBirpc<{ hello: () => string }>({}, {
     on() {},
     post() {},
@@ -17,11 +17,13 @@ it('stops the rpc promises', async () => {
       expect(err.message).toBe('[birpc] rpc is closed, cannot call "hello"')
     },
   )
+  expect(rpc.$closed).toBe(false)
   nextTick(() => {
     rpc.$close()
   })
   await promise
   await expect(() => rpc.hello()).rejects.toThrow('[birpc] rpc is closed, cannot call "hello"')
+  expect(rpc.$closed).toBe(true)
 })
 
 it('stops the rpc promises with a custom message', async () => {

@@ -11,3 +11,8 @@ export function bump() {
 export function getCount() {
   return bobCount
 }
+
+export function bumpWithReturn() {
+  bobCount += 1
+  return bobCount
+}

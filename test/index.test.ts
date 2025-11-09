@@ -45,6 +45,13 @@ it('basic', async () => {
   expect(Bob.getCount()).toBe(0)
   await new Promise(resolve => setTimeout(resolve, 1))
   expect(Bob.getCount()).toBe(1)
+
+  expect(await alice.bumpWithReturn()).toBe(2)
+  expect(Bob.getCount()).toBe(2)
+
+  expect(await alice.bumpWithReturn.asEvent()).toBeUndefined()
+  await new Promise(resolve => setTimeout(resolve, 1))
+  expect(Bob.getCount()).toBe(3)
 })
 
 it('await on birpc should not throw error', async () => {
@@ -66,9 +73,9 @@ it('$call', async () => {
   // one-way event
   expect(await alice.$callEvent('bump')).toBeUndefined()
 
-  expect(Bob.getCount()).toBe(1)
+  expect(Bob.getCount()).toBe(3)
   await new Promise(resolve => setTimeout(resolve, 1))
-  expect(Bob.getCount()).toBe(2)
+  expect(Bob.getCount()).toBe(4)
 })
 
 it('$callOptional', async () => {
