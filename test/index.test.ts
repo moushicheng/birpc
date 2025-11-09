@@ -75,7 +75,7 @@ it('$callOptional', async () => {
   const { bob } = createChannel()
 
   // @ts-expect-error `hello2` is not defined
-  expect(async () => await bob.$call('hello2', 'Bob'))
+  await expect(async () => await bob.$call('hello2', 'Bob'))
     .rejects
     .toThrow('[birpc] function "hello2" not found')
 
