@@ -20,6 +20,9 @@ it('group', async () => {
         await new Promise(resolve => setTimeout(resolve, 100))
         channel1.port1.on('message', fn)
       },
+      meta: {
+        name: 'client1',
+      },
     },
   )
   const client2 = createBirpc<AliceFunctions, BobFunctions>(
@@ -27,6 +30,9 @@ it('group', async () => {
     {
       post: data => channel2.port1.postMessage(data),
       on: fn => channel2.port1.on('message', fn),
+      meta: {
+        name: 'client2',
+      },
     },
   )
   const client3 = createBirpc<AliceFunctions, BobFunctions>(
@@ -34,6 +40,9 @@ it('group', async () => {
     {
       post: data => channel3.port1.postMessage(data),
       on: fn => channel3.port1.on('message', fn),
+      meta: {
+        name: 'client3',
+      },
     },
   )
 
@@ -43,18 +52,31 @@ it('group', async () => {
       {
         post: data => channel1.port2.postMessage(data),
         on: fn => channel1.port2.on('message', fn),
+        meta: {
+          name: 'channel1',
+        },
       },
       {
         post: data => channel2.port2.postMessage(data),
         on: fn => channel2.port2.on('message', fn),
+        meta: {
+          name: 'channel2',
+        },
       },
     ],
-    { eventNames: ['bump'] },
+    {
+      eventNames: ['bump'],
+      resolver(name, fn): any {
+        if (name === 'hello' && this.$meta?.name === 'channel1')
+          return async (name: string) => `${await fn(name)} (from channel1)`
+        return fn
+      },
+    },
   )
 
   // RPCs
   expect(await client1.hello('Bob'))
-    .toEqual('Hello Bob, my name is Alice')
+    .toEqual('Hello Bob, my name is Alice (from channel1)')
   expect(await client2.hello('Bob'))
     .toEqual('Hello Bob, my name is Alice')
   expect(await server.broadcast.hi('Alice'))

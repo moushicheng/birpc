@@ -5,7 +5,7 @@ export type PromisifyFn<T> = ReturnType<T> extends Promise<any>
   : (...args: ArgumentsType<T>) => Promise<Awaited<ReturnType<T>>>
 export type Thenable<T> = T | PromiseLike<T>
 
-export type BirpcResolver = (name: string, resolved: (...args: unknown[]) => unknown) => Thenable<((...args: unknown[]) => unknown) | undefined>
+export type BirpcResolver<This> = (this: This, name: string, resolved: (...args: unknown[]) => unknown) => Thenable<((...args: any[]) => any) | undefined>
 
 export interface ChannelOptions {
   /**
@@ -37,13 +37,18 @@ export interface ChannelOptions {
    * Call the methods with the RPC context or the original functions object
    */
   bind?: 'rpc' | 'functions'
+
+  /**
+   * Custom meta data to attached to the RPC instance's `$meta` property
+   */
+  meta?: any
 }
 
-export interface EventOptions<Remote> {
+export interface EventOptions<RemoteFunctions, LocalFunctions extends object = Record<string, never>> {
   /**
    * Names of remote functions that do not need response.
    */
-  eventNames?: (keyof Remote)[]
+  eventNames?: (keyof RemoteFunctions)[]
 
   /**
    * Maximum timeout for waiting for response, in milliseconds.
@@ -57,7 +62,7 @@ export interface EventOptions<Remote> {
    *
    * For advanced use cases only
    */
-  resolver?: BirpcResolver
+  resolver?: BirpcResolver<BirpcReturn<RemoteFunctions, LocalFunctions>>
 
   /**
    * Hook triggered before an event is sent to the remote
@@ -66,38 +71,38 @@ export interface EventOptions<Remote> {
    * @param next - Function to continue the request
    * @param resolve - Function to resolve the response directly
    */
-  onRequest?: (req: Request, next: (req?: Request) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
+  onRequest?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, req: Request, next: (req?: Request) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
 
   /**
    * Custom error handler
    *
    * @deprecated use `onFunctionError` and `onGeneralError` instead
    */
-  onError?: (error: Error, functionName: string, args: any[]) => boolean | void
+  onError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName: string, args: any[]) => boolean | void
 
   /**
    * Custom error handler for errors occurred in local functions being called
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onFunctionError?: (error: Error, functionName: string, args: any[]) => boolean | void
+  onFunctionError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName: string, args: any[]) => boolean | void
 
   /**
    * Custom error handler for errors occurred during serialization or messsaging
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onGeneralError?: (error: Error, functionName?: string, args?: any[]) => boolean | void
+  onGeneralError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName?: string, args?: any[]) => boolean | void
 
   /**
    * Custom error handler for timeouts
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onTimeoutError?: (functionName: string, args: any[]) => boolean | void
+  onTimeoutError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, functionName: string, args: any[]) => boolean | void
 }
 
-export type BirpcOptions<Remote> = EventOptions<Remote> & ChannelOptions
+export type BirpcOptions<RemoteFunctions, LocalFunctions extends object = Record<string, never>> = EventOptions<RemoteFunctions, LocalFunctions> & ChannelOptions
 
 export type BirpcFn<T> = PromisifyFn<T> & {
   /**
@@ -129,6 +134,10 @@ export interface BirpcReturnBuiltin<
    * Whether the RPC is closed
    */
   readonly $closed: boolean
+  /**
+   * Custom meta data attached to the RPC instance
+   */
+  readonly $meta: any
   /**
    * Close the RPC connection
    */
@@ -259,7 +268,7 @@ const random = Math.random.bind(Math)
 
 export function createBirpc<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
   $functions: LocalFunctions,
-  options: BirpcOptions<RemoteFunctions>,
+  options: BirpcOptions<RemoteFunctions, LocalFunctions>,
 ): BirpcReturn<RemoteFunctions, LocalFunctions> {
   const {
     post,
@@ -277,6 +286,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
 
   const _rpcPromiseMap = new Map<string, PromiseEntry>()
   let _promiseInit: Promise<any> | any
+  let rpc: BirpcReturn<RemoteFunctions, LocalFunctions>
 
   async function _call(
     method: string,
@@ -320,7 +330,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
         timeoutId = setTimeout(() => {
           try {
             // Custom onTimeoutError handler can throw its own error too
-            const handleResult = options.onTimeoutError?.(method, args)
+            const handleResult = options.onTimeoutError?.call(rpc, method, args)
             if (handleResult !== true)
               throw new Error(`[birpc] timeout on calling "${method}"`)
           }
@@ -342,12 +352,12 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
 
     try {
       if (options.onRequest)
-        await options.onRequest(req, handler, resolve)
+        await options.onRequest.call(rpc, req, handler, resolve)
       else
         await handler()
     }
     catch (e) {
-      if (options.onGeneralError?.(e as Error) !== true)
+      if (options.onGeneralError?.call(rpc, e as Error) !== true)
         throw e
       return
     }
@@ -377,11 +387,14 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
     get $closed() {
       return $closed
     },
+    get $meta() {
+      return options.meta
+    },
     $close,
     $functions,
   }
 
-  const rpc = new Proxy({}, {
+  rpc = new Proxy({}, {
     get(_, method: string) {
       if (Object.prototype.hasOwnProperty.call(builtinMethods, method))
         return (builtinMethods as any)[method]
@@ -440,7 +453,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
       msg = deserialize(data) as RPCMessage
     }
     catch (e) {
-      if (options.onGeneralError?.(e as Error) !== true)
+      if (options.onGeneralError?.call(rpc, e as Error) !== true)
         throw e
       return
     }
@@ -449,7 +462,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
       const { m: method, a: args, o: optional } = msg
       let result, error: any
       let fn = await (resolver
-        ? resolver(method, ($functions as any)[method])
+        ? resolver.call(rpc, method, ($functions as any)[method])
         : ($functions as any)[method])
 
       if (optional)
@@ -470,9 +483,9 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
       if (msg.i) {
         // Error handling
         if (error && options.onError)
-          options.onError(error, method, args)
+          options.onError.call(rpc, error, method, args)
         if (error && options.onFunctionError) {
-          if (options.onFunctionError(error, method, args) === true)
+          if (options.onFunctionError.call(rpc, error, method, args) === true)
             return
         }
 
@@ -484,7 +497,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
           }
           catch (e) {
             error = e
-            if (options.onGeneralError?.(e as Error, method, args) !== true)
+            if (options.onGeneralError?.call(rpc, e as Error, method, args) !== true)
               throw e
           }
         }
@@ -493,7 +506,7 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
           await post(serialize(<Response>{ t: TYPE_RESPONSE, i: msg.i, e: error }), ...extra)
         }
         catch (e) {
-          if (options.onGeneralError?.(e as Error, method, args) !== true)
+          if (options.onGeneralError?.call(rpc, e as Error, method, args) !== true)
             throw e
         }
       }
@@ -533,7 +546,7 @@ export function cachedMap<T, R>(items: T[], fn: ((i: T) => R)): R[] {
 export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
   functions: LocalFunctions,
   channels: ChannelOptions[] | (() => ChannelOptions[]),
-  options: EventOptions<RemoteFunctions> = {},
+  options: EventOptions<RemoteFunctions, LocalFunctions> = {},
 ): BirpcGroup<RemoteFunctions, LocalFunctions> {
   const getChannels = () => typeof channels === 'function' ? channels() : channels
   const getClients = (channels = getChannels()) => cachedMap(channels, s => createBirpc(functions, { ...options, ...s }))

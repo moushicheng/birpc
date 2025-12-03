@@ -14,10 +14,12 @@ const mockFn = {
 }
 
 function createChannel(options: {
-  onRequest?: EventOptions<BobFunctions>['onRequest']
+  onRequest?: EventOptions<BobFunctions, AliceFunctions>['onRequest']
 } = {}) {
   const channel = new MessageChannel()
-  const { onRequest = () => {} } = options
+  const {
+    onRequest = () => {},
+  } = options
   return {
     channel,
     alice: createBirpc<BobFunctions, AliceFunctions>(
