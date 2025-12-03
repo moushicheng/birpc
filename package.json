@@ -21,21 +21,18 @@
   ],
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
-    }
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
   },
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "unbuild",
-    "dev": "unbuild --stub",
+    "build": "tsdown",
+    "watch": "tsdown --watch",
     "lint": "eslint .",
     "prepublishOnly": "nr build",
     "release": "bumpp",
@@ -47,12 +44,12 @@
     "@antfu/eslint-config": "^6.3.0",
     "@antfu/ni": "^28.0.0",
     "@types/node": "^24.10.1",
-    "@vitest/coverage-v8": "3.0.9",
+    "@vitest/coverage-v8": "^4.0.15",
     "bumpp": "^10.3.2",
     "eslint": "^9.39.1",
+    "tsdown": "0.17.0-beta.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "unbuild": "^3.6.1",
     "vite": "^7.2.6",
     "vitest": "^4.0.15"
   }
