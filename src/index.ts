@@ -74,13 +74,6 @@ export interface EventOptions<RemoteFunctions, LocalFunctions extends object = R
   onRequest?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, req: Request, next: (req?: Request) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
 
   /**
-   * Custom error handler
-   *
-   * @deprecated use `onFunctionError` and `onGeneralError` instead
-   */
-  onError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName: string, args: any[]) => boolean | void
-
-  /**
    * Custom error handler for errors occurred in local functions being called
    *
    * @returns `true` to prevent the error from being thrown
@@ -609,11 +602,6 @@ export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalF
     functions,
     updateChannels,
     broadcast: broadcastProxy,
-    /**
-     * @deprecated use `broadcast`
-     */
-    // @ts-expect-error deprecated
-    boardcast: broadcastProxy,
   }
 }
 
