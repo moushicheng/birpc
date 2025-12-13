@@ -1,9 +1,9 @@
-export type ArgumentsType<T> = T extends (...args: infer A) => any ? A : never
-export type ReturnType<T> = T extends (...args: any) => infer R ? R : never
+import type { ArgumentsType, ReturnType, Thenable } from './utils'
+import { cachedMap, createPromiseWithResolvers, nanoid } from './utils'
+
 export type PromisifyFn<T> = ReturnType<T> extends Promise<any>
   ? T
   : (...args: ArgumentsType<T>) => Promise<Awaited<ReturnType<T>>>
-export type Thenable<T> = T | PromiseLike<T>
 
 export type BirpcResolver<This> = (this: This, name: string, resolved: (...args: unknown[]) => unknown) => Thenable<((...args: any[]) => any) | undefined>
 
@@ -11,15 +11,15 @@ export interface ChannelOptions {
   /**
    * Function to post raw message
    */
-  post: (data: any, ...extras: any[]) => any | Promise<any>
+  post: (data: any, ...extras: any[]) => Thenable<any>
   /**
    * Listener to receive raw message
    */
-  on: (fn: (data: any, ...extras: any[]) => void) => any | Promise<any>
+  on: (fn: (data: any, ...extras: any[]) => void) => Thenable<any>
   /**
    * Clear the listener when `$close` is called
    */
-  off?: (fn: (data: any, ...extras: any[]) => void) => any | Promise<any>
+  off?: (fn: (data: any, ...extras: any[]) => void) => Thenable<any>
   /**
    * Custom function to serialize data
    *
@@ -250,14 +250,11 @@ type RPCMessage = Request | Response
 
 export const DEFAULT_TIMEOUT = 60_000 // 1 minute
 
-function defaultSerialize(i: any) {
-  return i
-}
+const defaultSerialize = (i: any) => i
 const defaultDeserialize = defaultSerialize
 
 // Store public APIs locally in case they are overridden later
 const { clearTimeout, setTimeout } = globalThis
-const random = Math.random.bind(Math)
 
 export function createBirpc<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
   $functions: LocalFunctions,
@@ -474,9 +471,6 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
       }
 
       if (msg.i) {
-        // Error handling
-        if (error && options.onError)
-          options.onError.call(rpc, error, method, args)
         if (error && options.onFunctionError) {
           if (options.onFunctionError.call(rpc, error, method, args) === true)
             return
@@ -522,18 +516,6 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
   _promiseInit = on(onMessage)
 
   return rpc
-}
-
-const cacheMap = new WeakMap<any, any>()
-export function cachedMap<T, R>(items: T[], fn: ((i: T) => R)): R[] {
-  return items.map((i) => {
-    let r = cacheMap.get(i)
-    if (!r) {
-      r = fn(i)
-      cacheMap.set(i, r)
-    }
-    return r
-  })
 }
 
 export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
@@ -603,29 +585,4 @@ export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalF
     updateChannels,
     broadcast: broadcastProxy,
   }
-}
-
-function createPromiseWithResolvers<T>(): {
-  promise: Promise<T>
-  resolve: (value: T | PromiseLike<T>) => void
-  reject: (reason?: any) => void
-} {
-  let resolve: (value: T | PromiseLike<T>) => void
-  let reject: (reason?: any) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve: resolve!, reject: reject! }
-}
-
-// port from nanoid
-// https://github.com/ai/nanoid
-const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
-function nanoid(size = 21) {
-  let id = ''
-  let i = size
-  while (i--)
-    id += urlAlphabet[(random() * 64) | 0]
-  return id
 }
