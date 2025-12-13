@@ -1,7 +1,7 @@
 import type * as Alice from './alice'
 import { MessageChannel } from 'node:worker_threads'
 import { expect, it, vi } from 'vitest'
-import { createBirpc } from '../src'
+import { createBirpc } from '../src/main'
 import * as Bob from './bob'
 
 type AliceFunctions = typeof Alice

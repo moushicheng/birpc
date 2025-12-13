@@ -1,6 +1,6 @@
 import { nextTick } from 'node:process'
 import { expect, it } from 'vitest'
-import { createBirpc } from '../src'
+import { createBirpc } from '../src/main'
 
 it('stops the rpc promises', async () => {
   expect.assertions(4)

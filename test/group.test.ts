@@ -1,6 +1,7 @@
 import { MessageChannel } from 'node:worker_threads'
 import { expect, it } from 'vitest'
-import { createBirpc, createBirpcGroup } from '../src'
+import { createBirpcGroup } from '../src/group'
+import { createBirpc } from '../src/main'
 import * as Alice from './alice'
 import * as Bob from './bob'
 

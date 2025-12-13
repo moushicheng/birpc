@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { createBirpc } from '../src'
+import { createBirpc } from '../src/main'
 
 it('rejects pending calls', async () => {
   const rpc = createBirpc<{ first: () => Promise<void>, second: () => Promise<void> }>({}, {

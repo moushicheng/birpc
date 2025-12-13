@@ -1,7 +1,7 @@
-import type { Thenable } from '../src'
+import type { Thenable } from '../src/utils'
 import { MessageChannel } from 'node:worker_threads'
 import { expect, it } from 'vitest'
-import { createBirpc } from '../src'
+import { createBirpc } from '../src/main'
 import * as Alice from './alice'
 import * as Bob from './bob'
 
