@@ -54,6 +54,39 @@ it('basic', async () => {
   expect(Bob.getCount()).toBe(3)
 })
 
+it('basic without proxify', async () => {
+  const channel = new MessageChannel()
+  const alice = createBirpc<BobFunctions, AliceFunctions, false>(
+    Alice,
+    {
+      // mark bob's `bump` as an event without response
+      eventNames: ['bump'],
+      post: data => channel.port2.postMessage(data),
+      on: fn => channel.port2.on('message', fn),
+      proxify: false,
+    },
+  )
+  const bob = createBirpc<AliceFunctions, BobFunctions, false>(
+    Bob,
+    {
+      post: data => channel.port1.postMessage(data),
+      on: fn => channel.port1.on('message', fn),
+      proxify: false,
+    },
+  )
+
+  // RPCs
+  // @ts-expect-error `hello` is not a function
+  expect(() => bob.hello('Bob'))
+    .toThrowErrorMatchingInlineSnapshot(`[TypeError: bob.hello is not a function]`)
+  // @ts-expect-error `hi` is not a function
+  expect(() => alice.hi('Alice'))
+    .toThrowErrorMatchingInlineSnapshot(`[TypeError: alice.hi is not a function]`)
+
+  expect(await bob.$call('hello', 'Bob'))
+    .toEqual('Hello Bob, my name is Alice')
+})
+
 it('await on birpc should not throw error', async () => {
   const { bob, alice } = createChannel()
 

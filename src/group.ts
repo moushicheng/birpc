@@ -1,4 +1,4 @@
-import type { BirpcReturn, ChannelOptions, EventOptions } from './main'
+import type { BirpcReturn, ChannelOptions, EventOptions, ProxifiedRemoteFunctions } from './main'
 import type { ArgumentsType, ReturnType } from './utils'
 import { createBirpc } from './main'
 import { cachedMap } from './utils'
@@ -17,6 +17,10 @@ export interface BirpcGroupReturnBuiltin<RemoteFunctions> {
    * Send event without asking for response
    */
   $callEvent: <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => Promise<void>
+  /**
+   * Call the remote function with the raw options.
+   */
+  $callRaw: (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => Promise<Awaited<ReturnType<any>>[]>
 }
 
 export interface BirpcGroupFn<T> {
@@ -30,22 +34,34 @@ export interface BirpcGroupFn<T> {
   asEvent: (...args: ArgumentsType<T>) => Promise<void>
 }
 
-export type BirpcGroupReturn<RemoteFunctions> = {
-  [K in keyof RemoteFunctions]: BirpcGroupFn<RemoteFunctions[K]>
-} & BirpcGroupReturnBuiltin<RemoteFunctions>
+export type BirpcGroupReturn<
+  RemoteFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+> = Proxify extends true
+  ? ProxifiedRemoteFunctions<RemoteFunctions> & BirpcGroupReturnBuiltin<RemoteFunctions>
+  : BirpcGroupReturnBuiltin<RemoteFunctions>
 
-export interface BirpcGroup<RemoteFunctions, LocalFunctions = Record<string, never>> {
-  readonly clients: BirpcReturn<RemoteFunctions, LocalFunctions>[]
+export interface BirpcGroup<
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+> {
+  readonly clients: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>[]
   readonly functions: LocalFunctions
-  readonly broadcast: BirpcGroupReturn<RemoteFunctions>
-  updateChannels: (fn?: ((channels: ChannelOptions[]) => void)) => BirpcReturn<RemoteFunctions, LocalFunctions>[]
+  readonly broadcast: BirpcGroupReturn<RemoteFunctions, Proxify>
+  updateChannels: (fn?: ((channels: ChannelOptions[]) => void)) => BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>[]
 }
 
-export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
+export function createBirpcGroup<
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+>(
   functions: LocalFunctions,
   channels: ChannelOptions[] | (() => ChannelOptions[]),
-  options: EventOptions<RemoteFunctions, LocalFunctions> = {},
-): BirpcGroup<RemoteFunctions, LocalFunctions> {
+  options: EventOptions<RemoteFunctions, LocalFunctions, Proxify> = {},
+): BirpcGroup<RemoteFunctions, LocalFunctions, Proxify> {
+  const { proxify = true } = options
   const getChannels = () => typeof channels === 'function' ? channels() : channels
   const getClients = (channels = getChannels()) => cachedMap(channels, s => createBirpc(functions, { ...options, ...s }))
 
@@ -59,38 +75,36 @@ export function createBirpcGroup<RemoteFunctions = Record<string, never>, LocalF
     return Promise.all(clients.map(c => c.$callRaw({ method, args, event, optional })))
   }
 
-  function $call(method: string, ...args: ArgumentsType<RemoteFunctions[keyof RemoteFunctions]>) {
-    return _boardcast(method, args, false)
-  }
-  function $callOptional(method: string, ...args: ArgumentsType<RemoteFunctions[keyof RemoteFunctions]>) {
-    return _boardcast(method, args, false, true)
-  }
-  function $callEvent(method: string, ...args: ArgumentsType<RemoteFunctions[keyof RemoteFunctions]>) {
-    return _boardcast(method, args, true)
-  }
+  const $call = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, false)
+  const $callOptional = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, false, true)
+  const $callEvent = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, true)
+  const $callRaw = (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => _boardcast(options.method, options.args, options.event, options.optional)
 
   const broadcastBuiltin = {
     $call,
     $callOptional,
     $callEvent,
-  }
+    $callRaw,
+  } as unknown as BirpcGroupReturnBuiltin<RemoteFunctions>
 
-  const broadcastProxy = new Proxy({}, {
-    get(_, method) {
-      if (Object.prototype.hasOwnProperty.call(broadcastBuiltin, method))
-        return (broadcastBuiltin as any)[method]
+  const broadcastProxy = proxify
+    ? new Proxy({}, {
+      get(_, method) {
+        if (Object.prototype.hasOwnProperty.call(broadcastBuiltin, method))
+          return (broadcastBuiltin as any)[method]
 
-      const client = getClients()
-      const callbacks = client.map(c => (c as any)[method])
-      const sendCall = (...args: any[]) => {
-        return Promise.all(callbacks.map(i => i(...args)))
-      }
-      sendCall.asEvent = async (...args: any[]) => {
-        await Promise.all(callbacks.map(i => i.asEvent(...args)))
-      }
-      return sendCall
-    },
-  }) as BirpcGroupReturn<RemoteFunctions>
+        const client = getClients()
+        const callbacks = client.map(c => (c as any)[method])
+        const sendCall = (...args: any[]) => {
+          return Promise.all(callbacks.map(i => i(...args)))
+        }
+        sendCall.asEvent = async (...args: any[]) => {
+          await Promise.all(callbacks.map(i => i.asEvent(...args)))
+        }
+        return sendCall
+      },
+    }) as BirpcGroupReturn<RemoteFunctions, Proxify>
+    : broadcastBuiltin as BirpcGroupReturn<RemoteFunctions, Proxify>
 
   function updateChannels(fn?: ((channels: ChannelOptions[]) => void)) {
     const channels = getChannels()

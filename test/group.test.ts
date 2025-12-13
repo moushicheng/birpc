@@ -201,3 +201,113 @@ it('broadcast optional', async () => {
   await new Promise(resolve => setTimeout(resolve, 1))
   expect(Bob.getCount()).toBe(3)
 })
+
+it('group without proxify', async () => {
+  const channel1 = new MessageChannel()
+  const channel2 = new MessageChannel()
+  const channel3 = new MessageChannel()
+
+  const client1 = createBirpc<AliceFunctions, BobFunctions, false>(
+    Bob,
+    {
+      post: data => channel1.port1.postMessage(data),
+      on: async (fn) => {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        channel1.port1.on('message', fn)
+      },
+      meta: {
+        name: 'client1',
+      },
+      proxify: false,
+    },
+  )
+  const client2 = createBirpc<AliceFunctions, BobFunctions, false>(
+    Bob,
+    {
+      post: data => channel2.port1.postMessage(data),
+      on: fn => channel2.port1.on('message', fn),
+      meta: {
+        name: 'client2',
+      },
+      proxify: false,
+    },
+  )
+  const client3 = createBirpc<AliceFunctions, BobFunctions, false>(
+    Bob,
+    {
+      post: data => channel3.port1.postMessage(data),
+      on: fn => channel3.port1.on('message', fn),
+      meta: {
+        name: 'client3',
+      },
+      proxify: false,
+    },
+  )
+
+  const server = createBirpcGroup<BobFunctions, AliceFunctions, false>(
+    Alice,
+    [
+      {
+        post: data => channel1.port2.postMessage(data),
+        on: fn => channel1.port2.on('message', fn),
+        meta: {
+          name: 'channel1',
+        },
+      },
+      {
+        post: data => channel2.port2.postMessage(data),
+        on: fn => channel2.port2.on('message', fn),
+        meta: {
+          name: 'channel2',
+        },
+      },
+    ],
+    {
+      eventNames: ['bump'],
+      resolver(name, fn): any {
+        if (name === 'hello' && this.$meta?.name === 'channel1')
+          return async (name: string) => `${await fn(name)} (from channel1)`
+        return fn
+      },
+      proxify: false,
+    },
+  )
+
+  // RPCs
+  expect(await client1.$call('hello', 'Bob'))
+    .toEqual('Hello Bob, my name is Alice (from channel1)')
+  expect(await client2.$call('hello', 'Bob'))
+    .toEqual('Hello Bob, my name is Alice')
+  expect(await server.broadcast.$call('hi', 'Alice'))
+    .toEqual([
+      'Hi Alice, I am Bob',
+      'Hi Alice, I am Bob',
+    ])
+
+  // @ts-expect-error `hello` is not a function
+  expect(() => client1.hello('Bob'))
+    .toThrowErrorMatchingInlineSnapshot(`[TypeError: client1.hello is not a function]`)
+  // @ts-expect-error `hello` is not a function
+  expect(() => client2.hello('Bob'))
+    .toThrowErrorMatchingInlineSnapshot(`[TypeError: client2.hello is not a function]`)
+  // @ts-expect-error `hi` is not a function
+  expect(() => server.broadcast.hi('Alice'))
+    .toThrowErrorMatchingInlineSnapshot(`[TypeError: server.broadcast.hi is not a function]`)
+
+  server.updateChannels((channels) => {
+    channels.push({
+      post: data => channel3.port2.postMessage(data),
+      on: fn => channel3.port2.on('message', fn),
+    })
+  })
+
+  expect(await server.broadcast.$call('hi', 'Alice'))
+    .toEqual([
+      'Hi Alice, I am Bob',
+      'Hi Alice, I am Bob',
+      'Hi Alice, I am Bob',
+    ])
+
+  expect(await client3.$call('hello', 'Bob'))
+    .toEqual('Hello Bob, my name is Alice')
+})

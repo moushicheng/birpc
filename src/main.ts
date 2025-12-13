@@ -46,7 +46,11 @@ export interface ChannelOptions {
   meta?: any
 }
 
-export interface EventOptions<RemoteFunctions, LocalFunctions extends object = Record<string, never>> {
+export interface EventOptions<
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+> {
   /**
    * Names of remote functions that do not need response.
    */
@@ -60,11 +64,22 @@ export interface EventOptions<RemoteFunctions, LocalFunctions extends object = R
   timeout?: number
 
   /**
+   * Whether to proxy the remote functions.
+   *
+   * When `proxify` is false, calling the remote function
+   * with `rpc.$call('method', ...args)` instead of `rpc.method(...args)`
+   * explicitly is required.
+   *
+   * @default true
+   */
+  proxify?: Proxify
+
+  /**
    * Custom resolver to resolve function to be called
    *
    * For advanced use cases only
    */
-  resolver?: BirpcResolver<BirpcReturn<RemoteFunctions, LocalFunctions>>
+  resolver?: BirpcResolver<BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>>
 
   /**
    * Hook triggered before an event is sent to the remote
@@ -73,31 +88,35 @@ export interface EventOptions<RemoteFunctions, LocalFunctions extends object = R
    * @param next - Function to continue the request
    * @param resolve - Function to resolve the response directly
    */
-  onRequest?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, req: RpcRequest, next: (req?: RpcRequest) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
+  onRequest?: (this: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>, req: RpcRequest, next: (req?: RpcRequest) => Promise<any>, resolve: (res: any) => void) => void | Promise<void>
 
   /**
    * Custom error handler for errors occurred in local functions being called
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onFunctionError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName: string, args: any[]) => boolean | void
+  onFunctionError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>, error: Error, functionName: string, args: any[]) => boolean | void
 
   /**
    * Custom error handler for errors occurred during serialization or messsaging
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onGeneralError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, error: Error, functionName?: string, args?: any[]) => boolean | void
+  onGeneralError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>, error: Error, functionName?: string, args?: any[]) => boolean | void
 
   /**
    * Custom error handler for timeouts
    *
    * @returns `true` to prevent the error from being thrown
    */
-  onTimeoutError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions>, functionName: string, args: any[]) => boolean | void
+  onTimeoutError?: (this: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>, functionName: string, args: any[]) => boolean | void
 }
 
-export type BirpcOptions<RemoteFunctions, LocalFunctions extends object = Record<string, never>> = EventOptions<RemoteFunctions, LocalFunctions> & ChannelOptions
+export type BirpcOptions<
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+> = EventOptions<RemoteFunctions, LocalFunctions, Proxify> & ChannelOptions
 
 export type BirpcFn<T> = PromisifyFn<T> & {
   /**
@@ -149,12 +168,15 @@ export interface BirpcReturnBuiltin<
   $callRaw: (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => Promise<Awaited<ReturnType<any>>[]>
 }
 
+export type ProxifiedRemoteFunctions<RemoteFunctions extends object = Record<string, never>> = { [K in keyof RemoteFunctions]: BirpcFn<RemoteFunctions[K]> }
+
 export type BirpcReturn<
-  RemoteFunctions,
-  LocalFunctions = Record<string, never>,
-> = {
-  [K in keyof RemoteFunctions]: BirpcFn<RemoteFunctions[K]>
-} & BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+> = Proxify extends true
+  ? ProxifiedRemoteFunctions<RemoteFunctions> & BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
+  : BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
 
 export type PendingCallHandler = (options: Pick<PromiseEntry, 'method' | 'reject'>) => void | Promise<void>
 
@@ -173,10 +195,14 @@ const defaultDeserialize = defaultSerialize
 // Store public APIs locally in case they are overridden later
 const { clearTimeout, setTimeout } = globalThis
 
-export function createBirpc<RemoteFunctions = Record<string, never>, LocalFunctions extends object = Record<string, never>>(
+export function createBirpc<
+  RemoteFunctions extends object = Record<string, never>,
+  LocalFunctions extends object = Record<string, never>,
+  Proxify extends boolean = true,
+>(
   $functions: LocalFunctions,
-  options: BirpcOptions<RemoteFunctions, LocalFunctions>,
-): BirpcReturn<RemoteFunctions, LocalFunctions> {
+  options: BirpcOptions<RemoteFunctions, LocalFunctions, Proxify>,
+): BirpcReturn<RemoteFunctions, LocalFunctions, Proxify> {
   const {
     post,
     on,
@@ -187,13 +213,14 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
     resolver,
     bind = 'rpc',
     timeout = DEFAULT_TIMEOUT,
+    proxify = true,
   } = options
 
   let $closed = false
 
   const _rpcPromiseMap = new Map<string, PromiseEntry>()
   let _promiseInit: Promise<any> | any
-  let rpc: BirpcReturn<RemoteFunctions, LocalFunctions>
+  let rpc: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>
 
   async function _call(
     method: string,
@@ -298,25 +325,30 @@ export function createBirpc<RemoteFunctions = Record<string, never>, LocalFuncti
     $functions,
   }
 
-  rpc = new Proxy({}, {
-    get(_, method: string) {
-      if (Object.prototype.hasOwnProperty.call(builtinMethods, method))
-        return (builtinMethods as any)[method]
+  if (proxify) {
+    rpc = new Proxy({}, {
+      get(_, method: string) {
+        if (Object.prototype.hasOwnProperty.call(builtinMethods, method))
+          return (builtinMethods as any)[method]
 
-      // catch if "createBirpc" is returned from async function
-      if (method === 'then' && !eventNames.includes('then' as any) && !('then' in $functions))
-        return undefined
+        // catch if "createBirpc" is returned from async function
+        if (method === 'then' && !eventNames.includes('then' as any) && !('then' in $functions))
+          return undefined
 
-      const sendEvent = (...args: any[]) => _call(method, args, true)
-      if (eventNames.includes(method as any)) {
-        sendEvent.asEvent = sendEvent
-        return sendEvent
-      }
-      const sendCall = (...args: any[]) => _call(method, args, false)
-      sendCall.asEvent = sendEvent
-      return sendCall
-    },
-  }) as BirpcReturn<RemoteFunctions, LocalFunctions>
+        const sendEvent = (...args: any[]) => _call(method, args, true)
+        if (eventNames.includes(method as any)) {
+          sendEvent.asEvent = sendEvent
+          return sendEvent
+        }
+        const sendCall = (...args: any[]) => _call(method, args, false)
+        sendCall.asEvent = sendEvent
+        return sendCall
+      },
+    }) as BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>
+  }
+  else {
+    rpc = builtinMethods as BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>
+  }
 
   function $close(customError?: Error) {
     $closed = true
