@@ -41,4 +41,4 @@ jobs:
         run: nr build
 
       - name: Test
-        run: nr test --if-present
+        run: nr test

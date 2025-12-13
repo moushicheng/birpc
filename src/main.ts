@@ -178,6 +178,13 @@ export type BirpcReturn<
   ? ProxifiedRemoteFunctions<RemoteFunctions> & BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
   : BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
 
+export interface CallRawOptions {
+  method: string
+  args: unknown[]
+  event?: boolean
+  optional?: boolean
+}
+
 export type PendingCallHandler = (options: Pick<PromiseEntry, 'method' | 'reject'>) => void | Promise<void>
 
 interface PromiseEntry {
@@ -304,16 +311,11 @@ export function createBirpc<
     return promise
   }
 
-  const $call = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _call(method as string, args, false)
-  const $callOptional = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _call(method as string, args, false, true)
-  const $callEvent = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _call(method as string, args, true)
-  const $callRaw = (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => _call(options.method, options.args, options.event, options.optional)
-
   const builtinMethods = {
-    $call,
-    $callOptional,
-    $callEvent,
-    $callRaw,
+    $call: (method: string, ...args: unknown[]) => _call(method, args, false),
+    $callOptional: (method: string, ...args: unknown[]) => _call(method, args, false, true),
+    $callEvent: (method: string, ...args: unknown[]) => _call(method, args, true),
+    $callRaw: (options: CallRawOptions) => _call(options.method, options.args, options.event, options.optional),
     $rejectPendingCalls,
     get $closed() {
       return $closed
@@ -323,7 +325,7 @@ export function createBirpc<
     },
     $close,
     $functions,
-  }
+  } as BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
 
   if (proxify) {
     rpc = new Proxy({}, {

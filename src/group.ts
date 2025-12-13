@@ -1,4 +1,4 @@
-import type { BirpcReturn, ChannelOptions, EventOptions, ProxifiedRemoteFunctions } from './main'
+import type { BirpcReturn, CallRawOptions, ChannelOptions, EventOptions, ProxifiedRemoteFunctions } from './main'
 import type { ArgumentsType, ReturnType } from './utils'
 import { createBirpc } from './main'
 import { cachedMap } from './utils'
@@ -8,7 +8,7 @@ export interface BirpcGroupReturnBuiltin<RemoteFunctions> {
    * Call the remote function and wait for the result.
    * An alternative to directly calling the function
    */
-  $call: <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => Promise<Awaited<ReturnType<RemoteFunctions[K]>>>
+  $call: <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => Promise<Awaited<ReturnType<RemoteFunctions[K]>>[]>
   /**
    * Same as `$call`, but returns `undefined` if the function is not defined on the remote side.
    */
@@ -65,26 +65,16 @@ export function createBirpcGroup<
   const getChannels = () => typeof channels === 'function' ? channels() : channels
   const getClients = (channels = getChannels()) => cachedMap(channels, s => createBirpc(functions, { ...options, ...s }))
 
-  function _boardcast(
-    method: string,
-    args: unknown[],
-    event?: boolean,
-    optional?: boolean,
-  ) {
+  function _boardcast(options: CallRawOptions) {
     const clients = getClients()
-    return Promise.all(clients.map(c => c.$callRaw({ method, args, event, optional })))
+    return Promise.all(clients.map(c => c.$callRaw(options)))
   }
 
-  const $call = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, false)
-  const $callOptional = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, false, true)
-  const $callEvent = <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => _boardcast(method as string, args, true)
-  const $callRaw = (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => _boardcast(options.method, options.args, options.event, options.optional)
-
   const broadcastBuiltin = {
-    $call,
-    $callOptional,
-    $callEvent,
-    $callRaw,
+    $call: (method: string, ...args: unknown[]) => _boardcast({ method, args, event: false }),
+    $callOptional: (method: string, ...args: unknown[]) => _boardcast({ method, args, event: false, optional: true }),
+    $callEvent: (method: string, ...args: unknown[]) => _boardcast({ method, args, event: true }),
+    $callRaw: (options: CallRawOptions) => _boardcast(options),
   } as unknown as BirpcGroupReturnBuiltin<RemoteFunctions>
 
   const broadcastProxy = proxify
