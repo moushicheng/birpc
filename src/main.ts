@@ -47,8 +47,8 @@ export interface ChannelOptions {
 }
 
 export interface EventOptions<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 > {
   /**
@@ -113,8 +113,8 @@ export interface EventOptions<
 }
 
 export type BirpcOptions<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 > = EventOptions<RemoteFunctions, LocalFunctions, Proxify> & ChannelOptions
 
@@ -127,7 +127,7 @@ export type BirpcFn<T> = PromisifyFn<T> & {
 
 export interface BirpcReturnBuiltin<
   RemoteFunctions,
-  LocalFunctions = Record<string, never>,
+  LocalFunctions = Record<string, unknown>,
 > {
   /**
    * Raw functions object
@@ -168,11 +168,11 @@ export interface BirpcReturnBuiltin<
   $callRaw: (options: { method: string, args: unknown[], event?: boolean, optional?: boolean }) => Promise<Awaited<ReturnType<any>>[]>
 }
 
-export type ProxifiedRemoteFunctions<RemoteFunctions extends object = Record<string, never>> = { [K in keyof RemoteFunctions]: BirpcFn<RemoteFunctions[K]> }
+export type ProxifiedRemoteFunctions<RemoteFunctions extends object = Record<string, unknown>> = { [K in keyof RemoteFunctions]: BirpcFn<RemoteFunctions[K]> }
 
 export type BirpcReturn<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 > = Proxify extends true
   ? ProxifiedRemoteFunctions<RemoteFunctions> & BirpcReturnBuiltin<RemoteFunctions, LocalFunctions>
@@ -196,8 +196,8 @@ const defaultDeserialize = defaultSerialize
 const { clearTimeout, setTimeout } = globalThis
 
 export function createBirpc<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 >(
   $functions: LocalFunctions,

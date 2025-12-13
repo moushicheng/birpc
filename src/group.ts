@@ -35,15 +35,15 @@ export interface BirpcGroupFn<T> {
 }
 
 export type BirpcGroupReturn<
-  RemoteFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 > = Proxify extends true
   ? ProxifiedRemoteFunctions<RemoteFunctions> & BirpcGroupReturnBuiltin<RemoteFunctions>
   : BirpcGroupReturnBuiltin<RemoteFunctions>
 
 export interface BirpcGroup<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 > {
   readonly clients: BirpcReturn<RemoteFunctions, LocalFunctions, Proxify>[]
@@ -53,8 +53,8 @@ export interface BirpcGroup<
 }
 
 export function createBirpcGroup<
-  RemoteFunctions extends object = Record<string, never>,
-  LocalFunctions extends object = Record<string, never>,
+  RemoteFunctions extends object = Record<string, unknown>,
+  LocalFunctions extends object = Record<string, unknown>,
   Proxify extends boolean = true,
 >(
   functions: LocalFunctions,

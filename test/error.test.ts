@@ -12,8 +12,8 @@ it('on function error', async () => {
 
   let error: any
 
-  const _bob = createBirpc<AliceFunctions, BobFunctions>(
-    { ...Bob },
+  const _bob = createBirpc<AliceFunctions>(
+    Bob,
     {
       post: data => channel.port1.postMessage(data),
       on: fn => channel.port1.on('message', fn),
