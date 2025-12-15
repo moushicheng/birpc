@@ -12,7 +12,7 @@ export interface BirpcGroupReturnBuiltin<RemoteFunctions> {
   /**
    * Same as `$call`, but returns `undefined` if the function is not defined on the remote side.
    */
-  $callOptional: <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => Promise<Awaited<ReturnType<RemoteFunctions[K]> | undefined>>
+  $callOptional: <K extends keyof RemoteFunctions>(method: K, ...args: ArgumentsType<RemoteFunctions[K]>) => Promise<(Awaited<ReturnType<RemoteFunctions[K]>> | undefined)[]>
   /**
    * Send event without asking for response
    */
